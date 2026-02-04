@@ -1,0 +1,11 @@
+#
+#
+#
+
+newmtl  Mash_car_material
+illum 1
+Ka 0.2 0.2 0.2             # Ambient
+Kd 1.0 1.0 1.0             # Diffuse (boja/textura ce dominirati)
+Ks 0.0 0.0 0.0             # Specular = 0
+Ns 0.0                     # Shininess = 0
+map_Kd luka.jpg
