@@ -31,7 +31,7 @@ enum CarState { MOVING, SLOWING_DOWN, RETURNING, STOPPED, WAITING };
 CarState carState = STOPPED;
 float waitTimer = 0.0f;
 
-float carSpeed = 0.02f;
+float carSpeed = 0.05f;
 
 const int maxSeats = 8;
 bool allowBoarding = true;
@@ -79,30 +79,40 @@ void loadTrackVertices(const std::string& path) {
 }
 
 // ================= KEYPOINT GENERATION =================
-// uzimamo 1 tacku po delu staze
+// uzimamo sredinu svih vertexa u svakom delu staze
 void generateKeyPoints() {
     keyPoints.clear();
 
-    const int verticesPerPart = 382;
-    const int numParts = 300;
+    const int verticesPerPart = 382; // broj vertexa po delu
+    const int numParts = 300;        // ukupno delova
 
     for (int part = 0; part < numParts; ++part) {
-        int midIdx = part * verticesPerPart + verticesPerPart / 2;
-        if (midIdx >= rawVertices.size()) midIdx = rawVertices.size() - 1;
-        keyPoints.push_back(rawVertices[midIdx]);
+        int startIdx = part * verticesPerPart;
+        int endIdx = startIdx + verticesPerPart;
+        if (endIdx >= rawVertices.size()) endIdx = rawVertices.size() - 1;
+
+        glm::vec3 sum(0.0f);
+        int count = 0;
+        for (int i = startIdx; i <= endIdx; ++i) {
+            sum += rawVertices[i];
+            count++;
+        }
+        glm::vec3 mid = sum / float(count);
+        keyPoints.push_back(mid);
     }
 
     // segment lengths
     segmentLengths.clear();
     for (size_t i = 0; i < keyPoints.size(); ++i) {
         glm::vec3 p1 = keyPoints[i];
-        glm::vec3 p2 = keyPoints[(i + 1) % keyPoints.size()];
+        glm::vec3 p2 = keyPoints[(i + 1) % keyPoints.size()]; // wrap-around
         segmentLengths.push_back(glm::length(p2 - p1));
     }
 
     std::cout << "Generated " << keyPoints.size() << " keypoints for smooth movement.\n";
 }
 
+// ================= CATMULL-ROM =================
 glm::vec3 catmullRom(float t, glm::vec3 p0, glm::vec3 p1, glm::vec3 p2, glm::vec3 p3) {
     float t2 = t * t;
     float t3 = t2 * t;
@@ -112,27 +122,27 @@ glm::vec3 catmullRom(float t, glm::vec3 p0, glm::vec3 p1, glm::vec3 p2, glm::vec
         (-p0 + 3.0f * p1 - 3.0f * p2 + p3) * t3);
 }
 
-
 // ================= CAR UPDATE =================
 void updateCarPosition() {
     if (keyPoints.size() < 4) return;
 
+    int n = keyPoints.size();
+
+    // wrap-around indeksi za Catmull-Rom
     int idx1 = currentSegment;
-    int idx0 = (idx1 == 0) ? keyPoints.size() - 1 : idx1 - 1;
-    int idx2 = (idx1 + 1) % keyPoints.size();
-    int idx3 = (idx1 + 2) % keyPoints.size();
+    int idx0 = (idx1 - 1 + n) % n;
+    int idx2 = (idx1 + 1) % n;
+    int idx3 = (idx1 + 2) % n;
 
     float segLen = segmentLengths[idx1];
     alpha += carSpeed / segLen;
 
     if (alpha >= 1.0f) {
         alpha = 0.0f;
-        currentSegment = (currentSegment + 1) % keyPoints.size();
+        currentSegment = (currentSegment + 1) % n; // ciklični wrap-around
     }
 
     carPosition = catmullRom(alpha, keyPoints[idx0], keyPoints[idx1], keyPoints[idx2], keyPoints[idx3]);
-
-
 }
 
 // ================= MAIN =================
