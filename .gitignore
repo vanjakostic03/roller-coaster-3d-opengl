@@ -1,0 +1,27 @@
+# ===== Build output =====
+/x64/
+**/Debug/
+**/Release/
+
+*.obj
+*.exe
+*.dll
+*.pdb
+*.ilk
+*.idb
+*.log
+
+*.tlog
+*.lastbuildstate
+*.FileListAbsolute.txt
+
+# ===== Visual Studio =====
+.vs/
+*.user
+*.suo
+*.VC.db
+*.VC.opendb
+*.vcxproj.user
+
+# ===== Dependencies =====
+/packages/
