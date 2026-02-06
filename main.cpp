@@ -115,6 +115,40 @@ void generateKeyPoints() {
 //    }
 //}
 
+//void updateCarPosition() {
+//    if (sortedPoints.size() < 2) return;
+//
+//    glm::vec3 target = sortedPoints[currentTargetIdx];
+//    glm::vec3 delta = target - carPosition;
+//    float distToTarget = glm::length(delta);
+//
+//    if (distToTarget < 0.001f) distToTarget = 0.001f;
+//
+//    // Gravitacija: faktor zavisi od visinske razlike
+//    float gravityFactor = 1.5f;
+//    float slope = delta.y / distToTarget; // y / ukupna distanca
+//    gravityFactor += -slope; // nizbrdo (+), uzbrdo (-)
+//
+//    // Limitiranje efekta
+//    gravityFactor = glm::clamp(gravityFactor, 0.5f, 2.0f);
+//
+//    float moveStep = carSpeed * gravityFactor;
+//
+//    if (distToTarget > moveStep) {
+//        glm::vec3 direction = glm::normalize(delta);
+//        carPosition += direction * moveStep;
+//    }
+//    else {
+//        carPosition = target; // direktno na cilj
+//        currentTargetIdx = (currentTargetIdx + 1) % sortedPoints.size();
+//    }
+//}
+
+// Dodaj ovo u Global Variables sekciju
+glm::vec3 carFront(0.0f, 0.0f, 1.0f);      // trenutni forward
+glm::vec3 carFrontTarget(0.0f, 0.0f, 1.0f); // smer ka sledećoj tački
+
+
 void updateCarPosition() {
     if (sortedPoints.size() < 2) return;
 
@@ -124,26 +158,32 @@ void updateCarPosition() {
 
     if (distToTarget < 0.001f) distToTarget = 0.001f;
 
-    // Gravitacija: faktor zavisi od visinske razlike
+    // Ažuriramo smer gledanja (Forward vektor)
+    if (distToTarget > 0.01f) {
+        carFrontTarget = glm::normalize(delta);
+    }
+
+    // Smooth interpolacija: blend trenutnog i target vektora
+    float rotSpeed = 0.1f; // 0.1 = sporo, 0.5 = brže
+    carFront = glm::normalize(glm::mix(carFront, carFrontTarget, rotSpeed));
+
+
+    // Gravitacija
     float gravityFactor = 1.5f;
-    float slope = delta.y / distToTarget; // y / ukupna distanca
-    gravityFactor += -slope; // nizbrdo (+), uzbrdo (-)
+    float slope = delta.y / distToTarget;
+    gravityFactor += -slope;
 
-    // Limitiranje efekta
     gravityFactor = glm::clamp(gravityFactor, 0.5f, 2.0f);
-
     float moveStep = carSpeed * gravityFactor;
 
     if (distToTarget > moveStep) {
-        glm::vec3 direction = glm::normalize(delta);
-        carPosition += direction * moveStep;
+        carPosition += carFront * moveStep;
     }
     else {
-        carPosition = target; // direktno na cilj
+        carPosition = target;
         currentTargetIdx = (currentTargetIdx + 1) % sortedPoints.size();
     }
 }
-
 
 // ================= MAIN =================
 int main() {
@@ -194,14 +234,35 @@ int main() {
         tracks.Draw(unifiedShader);
 
         // Draw Car
-        glm::mat4 modelCar = glm::translate(glm::mat4(1.0f), carPosition);
+        // --- RENDERING CAR ---
+        glm::mat4 modelCar = glm::mat4(1.0f);
+        modelCar = glm::translate(modelCar, carPosition);
+
+        // PRORAČUN ROTACIJE:
+        // Cilj: Auto gleda u smeru carFront, a "glava" mu je okrenuta ka (0,1,0)
+        // Koristimo pomoćnu funkciju za kreiranje baze (LookAt stil)
+        glm::vec3 worldUp = glm::vec3(0.0f, 1.0f, 0.0f);
+        glm::vec3 right = glm::normalize(glm::cross(worldUp, carFront));
+        glm::vec3 up = glm::cross(carFront, right);
+
+        glm::mat4 rotationMatrix = glm::mat4(1.0f);
+        rotationMatrix[0] = glm::vec4(right, 0.0f);
+        rotationMatrix[1] = glm::vec4(up, 0.0f);
+        rotationMatrix[2] = glm::vec4(-carFront, 0.0f); // Negativno jer OpenGL gleda u -Z
+
+        modelCar = modelCar * rotationMatrix;
         modelCar = glm::scale(modelCar, glm::vec3(0.8f));
+
         unifiedShader.setMat4("uM", modelCar);
         car.Draw(unifiedShader);
 
-        // Draw Seats
-        glm::mat4 modelSeats = glm::translate(glm::mat4(1.0f), carPosition + seatsOffset);
+        // --- RENDERING SEATS (treba da prate istu rotaciju) ---
+        glm::mat4 modelSeats = glm::mat4(1.0f);
+        modelSeats = glm::translate(modelSeats, carPosition); // Prvo translacija do auta
+        modelSeats = modelSeats * rotationMatrix;             // Pa ista rotacija
+        modelSeats = glm::translate(modelSeats, seatsOffset); // Pa ofset unutar rotiranog auta
         modelSeats = glm::scale(modelSeats, glm::vec3(0.8f));
+
         unifiedShader.setMat4("uM", modelSeats);
         seats.Draw(unifiedShader);
 
