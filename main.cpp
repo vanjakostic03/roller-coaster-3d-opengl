@@ -38,15 +38,18 @@ float minSpeed = 0.05f;
 float maxSpeed = 1.4f;
 float gravityFactor = 9.7f;
 
+const int maxSeats = 8;
+
+bool allowBoarding = true;
+
 struct Passenger {
-    float offsetX, offsetY;
+    float offsetX, offsetY, offsetZ;
     bool beltOn;
     bool isSick;
     bool active;            
 };
 
 std::vector<Passenger> passengers;
-bool allowBoarding = true;
 
 // ================= HELPERS =================
 void loadTrackVertices(const std::string& path) {
@@ -126,14 +129,14 @@ void startRide(GLFWwindow* window, int key, int scancode, int action, int mods) 
 
 
     bool allBelts = true;
-    if (key == GLFW_KEY_ENTER && action == GLFW_PRESS && carState == STOPPED ) {
-    //if (key == GLFW_KEY_ENTER && action == GLFW_PRESS && carState == STOPPED && !passengers.empty()) {
-       /* for (Passenger& p : passengers) {
+    
+    if (key == GLFW_KEY_ENTER && action == GLFW_PRESS && carState == STOPPED && !passengers.empty()) {
+        for (Passenger& p : passengers) {
             if (!p.beltOn) {
                 allBelts = false;
                 break;
             }
-        }*/
+        }
 
         if (allBelts) {
             carState = MOVING;
@@ -158,6 +161,51 @@ void sickPassenger(GLFWwindow* window, int key, int scancode, int action, int mo
         if (key >= GLFW_KEY_1 && key <= GLFW_KEY_8) {
             int index = key - GLFW_KEY_1;
             makePassengerSick(index);
+        }
+    }
+}
+
+void putBeltOn(GLFWwindow* window, int key, int scancode, int action, int mods) {
+
+    if (action == GLFW_PRESS && carState == STOPPED) {
+        if (key >= GLFW_KEY_1 && key <= GLFW_KEY_8) {
+            int index = key - GLFW_KEY_1;
+            if (index < passengers.size() && passengers[index].active) {
+                passengers[index].beltOn = true;
+            }
+        }
+    }
+}
+
+
+void addPassanger(GLFWwindow* window, int key, int scancode, int action, int mods) {
+    
+    if (action == GLFW_PRESS && carState != MOVING) {
+        if (key == GLFW_KEY_SPACE  && allowBoarding) {
+            
+            if (passengers.size() >= maxSeats) return; // limit
+            int seatIndex = passengers.size();
+
+            int row = seatIndex % 2;
+            int col = seatIndex / 2;
+
+            float horizontalSpacing = 1.2f;  // razmak između kolona
+            float verticalSpacing = 1.2f;  // razmak između redova
+            float seatHeight = 0.0f;
+
+            Passenger p;
+
+            p.offsetX = -1.5 + col * horizontalSpacing;  //levo-desno
+            p.offsetY = seatHeight;                        //visina
+            p.offsetZ = -0.6f + row * verticalSpacing;    //napred-nazad
+
+            p.beltOn = false;
+            p.isSick = false;
+            p.active = true;
+
+            passengers.push_back(p);
+
+            //add model?
         }
     }
 }
@@ -240,8 +288,9 @@ void updateCarPosition(float deltaTime) {
 
 void allKeys(GLFWwindow* window, int key, int scancode, int action, int mods) {
     startRide(window, key, scancode, action, mods);
-    /*addPassanger(window, key, scancode, action, mods);*/
+    addPassanger(window, key, scancode, action, mods);
     sickPassenger(window, key, scancode, action, mods);
+    putBeltOn(window, key, scancode, action, mods);
 }
 // ================= MAIN =================
 int main() {
@@ -275,6 +324,8 @@ int main() {
     Model tracks("res/tracks.obj");
     Model car("res/car.obj");
     Model seats("res/seats.obj");
+    Model passengerModel("res/human.obj");
+    Model beltModel("res/belt.obj");
 
     Shader unifiedShader("basic.vert", "basic.frag");
 
@@ -298,6 +349,8 @@ int main() {
     glEnable(GL_DEPTH_TEST);
 
     double lastTime = glfwGetTime();
+    glm::mat4 passengerRotation = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(0.0f, -1.0f, 0.0f));
+
 
     while (!glfwWindowShouldClose(window)) {
         double currentTime = glfwGetTime();
@@ -396,6 +449,35 @@ int main() {
 
         unifiedShader.setMat4("uM", modelSeats);
         seats.Draw(unifiedShader);
+
+        //cout << passengers.size();
+        for (const Passenger& p : passengers) {
+            if (!p.active) continue;
+
+            glm::mat4 modelPassenger = glm::mat4(1.0f);
+            modelPassenger = glm::translate(modelPassenger, carPosition);
+            modelPassenger = modelPassenger * rotationMatrix; // auto rotacija
+            modelPassenger = modelPassenger * passengerRotation; // globalna rotacija putnika
+            modelPassenger = glm::translate(modelPassenger, glm::vec3(p.offsetX, p.offsetY + 0.8f, p.offsetZ));
+            modelPassenger = glm::scale(modelPassenger, glm::vec3(1.0f));
+
+            unifiedShader.setMat4("uM", modelPassenger);
+            passengerModel.Draw(unifiedShader);
+
+            if (p.beltOn) {
+                glm::mat4 modelBelt = glm::mat4(1.0f);
+                modelBelt = glm::translate(modelBelt, carPosition);
+                modelBelt = modelBelt * rotationMatrix; 
+                modelBelt = modelBelt * passengerRotation; 
+                modelBelt = glm::translate(modelBelt, glm::vec3(p.offsetX - 1.0f, p.offsetY + 0.8f, p.offsetZ));
+                modelBelt = glm::scale(modelBelt, glm::vec3(1.0f));
+
+                unifiedShader.setMat4("uM", modelBelt);
+                beltModel.Draw(unifiedShader);
+            }
+        }
+
+
 
         glfwSwapBuffers(window);
         glfwPollEvents();
