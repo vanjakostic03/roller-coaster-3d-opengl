@@ -147,42 +147,13 @@ void startRide(GLFWwindow* window, int key, int scancode, int action, int mods) 
     }
 }
 
-void makePassengerSick(int index) {
-    carState = SLOWING_DOWN;
-    if (passengers.size() > index) {      
-        passengers[index].isSick = true;
-        carState = SLOWING_DOWN;
-    }
-}
-
-void sickPassenger(GLFWwindow* window, int key, int scancode, int action, int mods) {
-
-    if (action == GLFW_PRESS && carState == MOVING) {
-        if (key >= GLFW_KEY_1 && key <= GLFW_KEY_8) {
-            int index = key - GLFW_KEY_1;
-            makePassengerSick(index);
-        }
-    }
-}
-
-void putBeltOn(GLFWwindow* window, int key, int scancode, int action, int mods) {
-
-    if (action == GLFW_PRESS && carState == STOPPED) {
-        if (key >= GLFW_KEY_1 && key <= GLFW_KEY_8) {
-            int index = key - GLFW_KEY_1;
-            if (index < passengers.size() && passengers[index].active) {
-                passengers[index].beltOn = true;
-            }
-        }
-    }
-}
 
 
 void addPassanger(GLFWwindow* window, int key, int scancode, int action, int mods) {
-    
+
     if (action == GLFW_PRESS && carState != MOVING) {
-        if (key == GLFW_KEY_SPACE  && allowBoarding) {
-            
+        if (key == GLFW_KEY_SPACE && allowBoarding) {
+
             if (passengers.size() >= maxSeats) return; // limit
             int seatIndex = passengers.size();
 
@@ -205,11 +176,58 @@ void addPassanger(GLFWwindow* window, int key, int scancode, int action, int mod
 
             passengers.push_back(p);
 
-            //add model?
         }
     }
 }
 
+
+void removePassenger(GLFWwindow* window, int key, int scancode, int action, int mods) {
+    
+    if (action == GLFW_PRESS && carState == STOPPED) {
+        if (key >= GLFW_KEY_1 && key <= GLFW_KEY_8) {
+            int index = key - GLFW_KEY_1;
+            if (index < passengers.size() && passengers[index].active) {
+                passengers[index].active = false;
+                passengers[index].beltOn = false;
+                passengers[index].isSick = false;
+            }
+        }
+    }
+
+    if (passengers.size() == 0) {
+        allowBoarding = true;
+    }
+}
+
+void makePassengerSick(int index) {
+    if (passengers.size() > index) {      
+        passengers[index].isSick = true;
+        carState = SLOWING_DOWN;
+    }
+}
+
+
+void sickPassenger(GLFWwindow* window, int key, int scancode, int action, int mods) {
+
+    if (action == GLFW_PRESS && carState == MOVING) {
+        if (key >= GLFW_KEY_1 && key <= GLFW_KEY_8) {
+            int index = key - GLFW_KEY_1;
+            makePassengerSick(index);
+        }
+    }
+}
+
+void putBeltOn(GLFWwindow* window, int key, int scancode, int action, int mods) {
+
+    if (action == GLFW_PRESS && carState == STOPPED) {
+        if (key >= GLFW_KEY_1 && key <= GLFW_KEY_8) {
+            int index = key - GLFW_KEY_1;
+            if (index < passengers.size() && passengers[index].active) {
+                passengers[index].beltOn = true;
+            }
+        }
+    }
+}
 
 
 void stopCar() {
@@ -284,14 +302,14 @@ void updateCarPosition(float deltaTime) {
 }
 
 
-
-
 void allKeys(GLFWwindow* window, int key, int scancode, int action, int mods) {
     startRide(window, key, scancode, action, mods);
     addPassanger(window, key, scancode, action, mods);
     sickPassenger(window, key, scancode, action, mods);
     putBeltOn(window, key, scancode, action, mods);
 }
+
+
 // ================= MAIN =================
 int main() {
     if (!glfwInit()) return -1;
@@ -330,6 +348,8 @@ int main() {
     Shader unifiedShader("basic.vert", "basic.frag");
 
     unifiedShader.use();
+    unifiedShader.setVec3("uTint", 1.0f, 1.0f, 1.0f);
+
 
     unifiedShader.setVec3("uLightPos1", 0, 100, 75);
     unifiedShader.setVec3("uLightColor1", 2, 2, 2);
@@ -347,6 +367,8 @@ int main() {
     if (!sortedPoints.empty()) carPosition = sortedPoints[0];
 
     glEnable(GL_DEPTH_TEST);
+
+    glClearColor(0.12f, 0.8f, 1.0f, 1.0f);
 
     double lastTime = glfwGetTime();
     glm::mat4 passengerRotation = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(0.0f, -1.0f, 0.0f));
@@ -454,6 +476,11 @@ int main() {
         for (const Passenger& p : passengers) {
             if (!p.active) continue;
 
+            if (p.isSick)
+                unifiedShader.setVec3("uTint", 0.2f, 1.0f, 0.2f);
+            else
+                unifiedShader.setVec3("uTint", 1.0f, 1.0f, 1.0f);
+
             glm::mat4 modelPassenger = glm::mat4(1.0f);
             modelPassenger = glm::translate(modelPassenger, carPosition);
             modelPassenger = modelPassenger * rotationMatrix; // auto rotacija
@@ -476,6 +503,9 @@ int main() {
                 beltModel.Draw(unifiedShader);
             }
         }
+
+        unifiedShader.setVec3("uTint", 1.0f, 1.0f, 1.0f);
+
 
 
 

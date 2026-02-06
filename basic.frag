@@ -1,9 +1,12 @@
 #version 330 core
 out vec4 FragColor;
 
+
 in vec3 chNormal;
 in vec3 chFragPos;
 in vec2 chUV;
+
+uniform vec3 uTint;  
 
 uniform vec3 uLightPos1;
 uniform vec3 uLightColor1;
@@ -60,5 +63,8 @@ void main()
 
     vec3 result = light1 + light2 + light3 + light4;
 
-    FragColor = texture(uDiffMap1, chUV) * vec4(result, 1.0);
+    vec4 texColor = texture(uDiffMap1, chUV);
+    vec3 finalColor = texColor.rgb * result * uTint;
+    FragColor = vec4(finalColor, texColor.a);
+
 }
