@@ -29,6 +29,19 @@ glm::vec3 carPosition(0.0f);
 glm::vec3 seatsOffset(0.0f, 0.3f, 0.0f);
 int currentTargetIdx = 0;
 
+enum CarState { MOVING, SLOWING_DOWN, RETURNING, STOPPED, WAITING };
+CarState carState = STOPPED;
+
+struct Passenger {
+    float offsetX, offsetY;
+    bool beltOn;
+    bool isSick;
+    bool active;            //flag da li je izasao iz vozila
+};
+
+std::vector<Passenger> passengers;
+bool allowBoarding = true;
+
 // ================= HELPERS =================
 void loadTrackVertices(const std::string& path) {
     std::ifstream file(path);
@@ -97,57 +110,33 @@ void generateKeyPoints() {
     std::cout << "Sorted " << sortedPoints.size() << " points for a continuous loop.\n";
 }
 
-// ================= UPDATE LOGIC =================
-//void updateCarPosition() {
-//    if (sortedPoints.size() < 2) return;
-//
-//    glm::vec3 target = sortedPoints[currentTargetIdx];
-//    float distToTarget = glm::distance(carPosition, target);
-//
-//    // Pomeraj auto ka meti
-//    if (distToTarget > 0.1f) {
-//        glm::vec3 direction = glm::normalize(target - carPosition);
-//        carPosition += direction * carSpeed;
-//    }
-//    else {
-//        // Stigli smo do tačke, pređi na sledeću (kružno)
-//        currentTargetIdx = (currentTargetIdx + 1) % sortedPoints.size();
-//    }
-//}
-
-//void updateCarPosition() {
-//    if (sortedPoints.size() < 2) return;
-//
-//    glm::vec3 target = sortedPoints[currentTargetIdx];
-//    glm::vec3 delta = target - carPosition;
-//    float distToTarget = glm::length(delta);
-//
-//    if (distToTarget < 0.001f) distToTarget = 0.001f;
-//
-//    // Gravitacija: faktor zavisi od visinske razlike
-//    float gravityFactor = 1.5f;
-//    float slope = delta.y / distToTarget; // y / ukupna distanca
-//    gravityFactor += -slope; // nizbrdo (+), uzbrdo (-)
-//
-//    // Limitiranje efekta
-//    gravityFactor = glm::clamp(gravityFactor, 0.5f, 2.0f);
-//
-//    float moveStep = carSpeed * gravityFactor;
-//
-//    if (distToTarget > moveStep) {
-//        glm::vec3 direction = glm::normalize(delta);
-//        carPosition += direction * moveStep;
-//    }
-//    else {
-//        carPosition = target; // direktno na cilj
-//        currentTargetIdx = (currentTargetIdx + 1) % sortedPoints.size();
-//    }
-//}
 
 // Dodaj ovo u Global Variables sekciju
 glm::vec3 carFront(0.0f, 0.0f, 1.0f);      // trenutni forward
 glm::vec3 carFrontTarget(0.0f, 0.0f, 1.0f); // smer ka sledećoj tački
 
+
+void startRide(GLFWwindow* window, int key, int scancode, int action, int mods) {
+
+
+    bool allBelts = true;
+    if (key == GLFW_KEY_ENTER && action == GLFW_PRESS && carState == STOPPED ) {
+    //if (key == GLFW_KEY_ENTER && action == GLFW_PRESS && carState == STOPPED && !passengers.empty()) {
+       /* for (Passenger& p : passengers) {
+            if (!p.beltOn) {
+                allBelts = false;
+                break;
+            }
+        }*/
+
+        if (allBelts) {
+            carState = MOVING;
+            allowBoarding = false;
+        }
+
+
+    }
+}
 
 void updateCarPosition() {
     if (sortedPoints.size() < 2) return;
@@ -185,19 +174,58 @@ void updateCarPosition() {
     }
 }
 
+
+void allKeys(GLFWwindow* window, int key, int scancode, int action, int mods) {
+    startRide(window, key, scancode, action, mods);
+    /*addPassanger(window, key, scancode, action, mods);
+    sickPassenger(window, key, scancode, action, mods);*/
+}
 // ================= MAIN =================
 int main() {
     if (!glfwInit()) return -1;
 
-    // Prozor i OpenGL setup (tvoj originalni kod)
-    GLFWwindow* window = glfwCreateWindow(1280, 720, "Fixed Roller Coaster", NULL, NULL);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+
+    GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+    const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+    int screenWidth = mode->width;
+    int screenHeight = mode->height;
+
+    GLFWwindow* window = glfwCreateWindow(screenWidth, screenHeight, "OpenGL Window", NULL, NULL);
+    if (!window) {
+        std::cout << "Window fail!\n";
+        glfwTerminate();
+        return -2;
+    }
     glfwMakeContextCurrent(window);
-    glewInit();
+
+    if (glewInit() != GLEW_OK) {
+        std::cout << "GLEW fail!\n";
+        return -3;
+    }
+
+    glfwSetKeyCallback(window, allKeys);
+
 
     Model tracks("res/tracks.obj");
     Model car("res/car.obj");
     Model seats("res/seats.obj");
+
     Shader unifiedShader("basic.vert", "basic.frag");
+
+    unifiedShader.use();
+
+    unifiedShader.setVec3("uLightPos1", 0, 100, 75);
+    unifiedShader.setVec3("uLightColor1", 2, 2, 2);
+    unifiedShader.setVec3("uLightPos2", 0, 100, 20);
+    unifiedShader.setVec3("uLightColor2", 2, 2, 2);
+    unifiedShader.setVec3("uLightPos3", 100, -20, -30);
+    unifiedShader.setVec3("uLightColor3", 2, 2, 2);
+    unifiedShader.setVec3("uLightPos4", 0, 0, 50);
+    unifiedShader.setVec3("uLightColor4", 2, 2, 2);
+    unifiedShader.setVec3("uViewPos", 0, 0, 5);
 
     loadTrackVertices("res/tracks.obj");
     generateKeyPoints();
@@ -207,40 +235,27 @@ int main() {
     glEnable(GL_DEPTH_TEST);
 
     while (!glfwWindowShouldClose(window)) {
+
+        if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+            glfwSetWindowShouldClose(window, true);
+
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         updateCarPosition();
 
-        unifiedShader.use();
-
-        // --- TVOJA SVETLA ---
-        unifiedShader.setVec3("uLightPos1", 0, 100, 75);
-        unifiedShader.setVec3("uLightColor1", 2, 2, 2);
-        unifiedShader.setVec3("uLightPos2", 0, 100, 20);
-        unifiedShader.setVec3("uLightColor2", 2, 2, 2);
-        unifiedShader.setVec3("uLightPos3", 100, -20, -30);
-        unifiedShader.setVec3("uLightColor3", 2, 2, 2);
-        unifiedShader.setVec3("uLightPos4", 0, 0, 50);
-        unifiedShader.setVec3("uLightColor4", 2, 2, 2);
-        unifiedShader.setVec3("uViewPos", 0, 0, 5);
+        
 
         glm::mat4 projection = glm::perspective(glm::radians(45.0f), 1280.0f / 720.0f, 0.1f, 100.0f);
         glm::mat4 view = glm::lookAt(glm::vec3(0.0f, 15.0f, -70.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
         unifiedShader.setMat4("uP", projection);
         unifiedShader.setMat4("uV", view);
 
-        // Draw Tracks
         unifiedShader.setMat4("uM", glm::mat4(1.0f));
         tracks.Draw(unifiedShader);
 
-        // Draw Car
-        // --- RENDERING CAR ---
         glm::mat4 modelCar = glm::mat4(1.0f);
         modelCar = glm::translate(modelCar, carPosition);
 
-        // PRORAČUN ROTACIJE:
-        // Cilj: Auto gleda u smeru carFront, a "glava" mu je okrenuta ka (0,1,0)
-        // Koristimo pomoćnu funkciju za kreiranje baze (LookAt stil)
         glm::vec3 worldUp = glm::vec3(0.0f, 1.0f, 0.0f);
         glm::vec3 right = glm::normalize(glm::cross(worldUp, carFront));
         glm::vec3 up = glm::cross(carFront, right);
@@ -248,7 +263,7 @@ int main() {
         glm::mat4 rotationMatrix = glm::mat4(1.0f);
         rotationMatrix[0] = glm::vec4(right, 0.0f);
         rotationMatrix[1] = glm::vec4(up, 0.0f);
-        rotationMatrix[2] = glm::vec4(-carFront, 0.0f); // Negativno jer OpenGL gleda u -Z
+        rotationMatrix[2] = glm::vec4(-carFront, 0.0f); 
 
         modelCar = modelCar * rotationMatrix;
         modelCar = glm::scale(modelCar, glm::vec3(0.8f));
@@ -256,11 +271,11 @@ int main() {
         unifiedShader.setMat4("uM", modelCar);
         car.Draw(unifiedShader);
 
-        // --- RENDERING SEATS (treba da prate istu rotaciju) ---
+
         glm::mat4 modelSeats = glm::mat4(1.0f);
-        modelSeats = glm::translate(modelSeats, carPosition); // Prvo translacija do auta
-        modelSeats = modelSeats * rotationMatrix;             // Pa ista rotacija
-        modelSeats = glm::translate(modelSeats, seatsOffset); // Pa ofset unutar rotiranog auta
+        modelSeats = glm::translate(modelSeats, carPosition); 
+        modelSeats = modelSeats * rotationMatrix;             
+        modelSeats = glm::translate(modelSeats, seatsOffset); 
         modelSeats = glm::scale(modelSeats, glm::vec3(0.8f));
 
         unifiedShader.setMat4("uM", modelSeats);
