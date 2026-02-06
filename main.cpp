@@ -98,22 +98,52 @@ void generateKeyPoints() {
 }
 
 // ================= UPDATE LOGIC =================
+//void updateCarPosition() {
+//    if (sortedPoints.size() < 2) return;
+//
+//    glm::vec3 target = sortedPoints[currentTargetIdx];
+//    float distToTarget = glm::distance(carPosition, target);
+//
+//    // Pomeraj auto ka meti
+//    if (distToTarget > 0.1f) {
+//        glm::vec3 direction = glm::normalize(target - carPosition);
+//        carPosition += direction * carSpeed;
+//    }
+//    else {
+//        // Stigli smo do tačke, pređi na sledeću (kružno)
+//        currentTargetIdx = (currentTargetIdx + 1) % sortedPoints.size();
+//    }
+//}
+
 void updateCarPosition() {
     if (sortedPoints.size() < 2) return;
 
     glm::vec3 target = sortedPoints[currentTargetIdx];
-    float distToTarget = glm::distance(carPosition, target);
+    glm::vec3 delta = target - carPosition;
+    float distToTarget = glm::length(delta);
 
-    // Pomeraj auto ka meti
-    if (distToTarget > 0.1f) {
-        glm::vec3 direction = glm::normalize(target - carPosition);
-        carPosition += direction * carSpeed;
+    if (distToTarget < 0.001f) distToTarget = 0.001f;
+
+    // Gravitacija: faktor zavisi od visinske razlike
+    float gravityFactor = 1.5f;
+    float slope = delta.y / distToTarget; // y / ukupna distanca
+    gravityFactor += -slope; // nizbrdo (+), uzbrdo (-)
+
+    // Limitiranje efekta
+    gravityFactor = glm::clamp(gravityFactor, 0.5f, 2.0f);
+
+    float moveStep = carSpeed * gravityFactor;
+
+    if (distToTarget > moveStep) {
+        glm::vec3 direction = glm::normalize(delta);
+        carPosition += direction * moveStep;
     }
     else {
-        // Stigli smo do tačke, pređi na sledeću (kružno)
+        carPosition = target; // direktno na cilj
         currentTargetIdx = (currentTargetIdx + 1) % sortedPoints.size();
     }
 }
+
 
 // ================= MAIN =================
 int main() {
