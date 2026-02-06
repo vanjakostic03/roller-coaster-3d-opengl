@@ -32,11 +32,17 @@ int currentTargetIdx = 0;
 enum CarState { MOVING, SLOWING_DOWN, RETURNING, STOPPED, WAITING };
 CarState carState = STOPPED;
 
+float t = 0.0f;        // parametar napredovanja duž staze
+float waitTimer = 0.0f;
+float minSpeed = 0.05f;
+float maxSpeed = 1.4f;
+float gravityFactor = 9.7f;
+
 struct Passenger {
     float offsetX, offsetY;
     bool beltOn;
     bool isSick;
-    bool active;            //flag da li je izasao iz vozila
+    bool active;            
 };
 
 std::vector<Passenger> passengers;
@@ -111,9 +117,9 @@ void generateKeyPoints() {
 }
 
 
-// Dodaj ovo u Global Variables sekciju
-glm::vec3 carFront(0.0f, 0.0f, 1.0f);      // trenutni forward
-glm::vec3 carFrontTarget(0.0f, 0.0f, 1.0f); // smer ka sledećoj tački
+
+glm::vec3 carFront(0.0f, 0.0f, 1.0f);      
+glm::vec3 carFrontTarget(0.0f, 0.0f, 1.0f); 
 
 
 void startRide(GLFWwindow* window, int key, int scancode, int action, int mods) {
@@ -138,47 +144,104 @@ void startRide(GLFWwindow* window, int key, int scancode, int action, int mods) 
     }
 }
 
-void updateCarPosition() {
-    if (sortedPoints.size() < 2) return;
-
-    glm::vec3 target = sortedPoints[currentTargetIdx];
-    glm::vec3 delta = target - carPosition;
-    float distToTarget = glm::length(delta);
-
-    if (distToTarget < 0.001f) distToTarget = 0.001f;
-
-    // Ažuriramo smer gledanja (Forward vektor)
-    if (distToTarget > 0.01f) {
-        carFrontTarget = glm::normalize(delta);
+void makePassengerSick(int index) {
+    carState = SLOWING_DOWN;
+    if (passengers.size() > index) {      
+        passengers[index].isSick = true;
+        carState = SLOWING_DOWN;
     }
+}
 
-    // Smooth interpolacija: blend trenutnog i target vektora
-    float rotSpeed = 0.1f; // 0.1 = sporo, 0.5 = brže
-    carFront = glm::normalize(glm::mix(carFront, carFrontTarget, rotSpeed));
+void sickPassenger(GLFWwindow* window, int key, int scancode, int action, int mods) {
 
-
-    // Gravitacija
-    float gravityFactor = 1.5f;
-    float slope = delta.y / distToTarget;
-    gravityFactor += -slope;
-
-    gravityFactor = glm::clamp(gravityFactor, 0.5f, 2.0f);
-    float moveStep = carSpeed * gravityFactor;
-
-    if (distToTarget > moveStep) {
-        carPosition += carFront * moveStep;
-    }
-    else {
-        carPosition = target;
-        currentTargetIdx = (currentTargetIdx + 1) % sortedPoints.size();
+    if (action == GLFW_PRESS && carState == MOVING) {
+        if (key >= GLFW_KEY_1 && key <= GLFW_KEY_8) {
+            int index = key - GLFW_KEY_1;
+            makePassengerSick(index);
+        }
     }
 }
 
 
+
+void stopCar() {
+    for (Passenger& p : passengers) {
+        p.beltOn = false;
+    }
+}
+
+std::pair<glm::vec3, glm::vec3> getCarPosition(const std::vector<glm::vec3>& points, float t) {
+    int n = points.size();
+    int i0 = (int)(t * n);
+    int i1 = (i0 + 1) % n;
+    float alpha = t * n - i0;
+
+    glm::vec3 pos = glm::mix(points[i0], points[i1], alpha);
+    glm::vec3 forward = glm::normalize(points[i1] - points[i0]);
+    return { pos, forward };
+}
+
+
+void updateCarPosition(float deltaTime) {
+    if (sortedPoints.empty()) return;
+
+    int n = sortedPoints.size();
+    float dtSlope = 0.001f;
+
+    // indeks trenutnog segmenta
+    int i0 = (int)(t * n);
+    int i1 = (i0 + 1) % n;
+
+    glm::vec3 p1 = sortedPoints[i0];
+    glm::vec3 p2 = sortedPoints[i1];
+
+    // nagib u Y osi
+    float dy = p2.y - p1.y;
+    float acc = -dy * gravityFactor;
+
+    switch (carState) {
+    case MOVING:
+        carSpeed += acc * deltaTime;
+        carSpeed = glm::clamp(carSpeed, minSpeed, maxSpeed);
+        t += carSpeed * deltaTime;
+        break;
+    case SLOWING_DOWN:
+        carSpeed -= 0.1f * deltaTime;
+        if (carSpeed <= 0.0f) { carSpeed = 0.0f; carState = WAITING; waitTimer = 0.0f; }
+        else t += carSpeed * deltaTime;
+        break;
+    case WAITING:
+        waitTimer += deltaTime;
+        if (waitTimer >= 10.0f) {
+            carSpeed = 0.1f;
+            carState = RETURNING;
+        }
+        break;
+    case RETURNING:
+        t -= carSpeed * deltaTime;
+        if (t <= 0.0f) { t = 0.0f; carState = STOPPED; carSpeed = 0.0f; stopCar(); }
+        break;
+    case STOPPED:
+        carSpeed = 0.0f;
+        break;
+    }
+
+    if (t >= 1.0f) t -= floor(t);
+    if (t < 0.0f) t += 1.0f;
+
+    // pozicija automobila
+    auto pos = getCarPosition(sortedPoints, t);
+    carPosition = pos.first;
+    carFront = pos.second;  // orizontalni forward vector, normalize
+}
+
+
+
+
 void allKeys(GLFWwindow* window, int key, int scancode, int action, int mods) {
     startRide(window, key, scancode, action, mods);
-    /*addPassanger(window, key, scancode, action, mods);
-    sickPassenger(window, key, scancode, action, mods);*/
+    /*addPassanger(window, key, scancode, action, mods);*/
+    sickPassenger(window, key, scancode, action, mods);
 }
 // ================= MAIN =================
 int main() {
@@ -234,14 +297,67 @@ int main() {
 
     glEnable(GL_DEPTH_TEST);
 
+    double lastTime = glfwGetTime();
+
     while (!glfwWindowShouldClose(window)) {
+        double currentTime = glfwGetTime();
+        float deltaTime = static_cast<float>(currentTime - lastTime);
+        lastTime = currentTime;
 
         if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
             glfwSetWindowShouldClose(window, true);
 
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        updateCarPosition();
+        if (!sortedPoints.empty()) {
+
+            // indeksi za interpolaciju
+            int n = sortedPoints.size();
+            int i0 = (int)(t * n);
+            int i1 = (i0 + 1) % n;
+            float alpha = t * n - i0;
+
+            glm::vec3 p1 = sortedPoints[i0];
+            glm::vec3 p2 = sortedPoints[i1];
+
+            // nagib i ubrzanje
+            float dy = p2.y - p1.y;
+            float acc = -dy * gravityFactor;
+
+            switch (carState) {
+            case MOVING:
+                carSpeed += acc * deltaTime;
+                carSpeed = glm::clamp(carSpeed, minSpeed, maxSpeed);
+                t += carSpeed * deltaTime;
+                break;
+            case SLOWING_DOWN:
+                carSpeed -= 0.1f * deltaTime;
+                if (carSpeed <= 0.0f) { carSpeed = 0.0f; carState = WAITING; waitTimer = 0.0f; }
+                else t += carSpeed * deltaTime;
+                break;
+            case WAITING:
+                waitTimer += deltaTime;
+                if (waitTimer >= 10.0f) {
+                    carSpeed = 0.1f;
+                    carState = RETURNING;
+                }
+                break;
+            case RETURNING:
+                t -= carSpeed * deltaTime;
+                if (t <= 0.0f) { t = 0.0f; carState = STOPPED; carSpeed = 0.0f; stopCar(); }
+                break;
+            case STOPPED:
+                carSpeed = 0.0f;
+                break;
+            }
+
+            if (t >= 1.0f) t -= floor(t);
+            if (t < 0.0f) t += 1.0f;
+
+            // pozicija i forward vektor automobila
+            carPosition = glm::mix(p1, p2, alpha);
+            carFront = glm::normalize(p2 - p1);
+        }
 
         
 
