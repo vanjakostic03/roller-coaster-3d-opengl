@@ -23,7 +23,7 @@
 float carSpeed = 0.02f;
 std::vector<glm::vec3> rawVertices;
 std::vector<glm::vec3> keyPoints;
-std::vector<glm::vec3> sortedPoints; // Ovde će biti tačke u pravom redosledu
+std::vector<glm::vec3> sortedPoints; 
 
 glm::vec3 carPosition(0.0f);
 glm::vec3 seatsOffset(0.0f, 0.3f, 0.0f);
@@ -36,11 +36,11 @@ float t = 0.0f;        // parametar napredovanja duž staze
 float waitTimer = 0.0f;
 float minSpeed = 0.05f;
 float maxSpeed = 1.4f;
-float gravityFactor = 9.7f;
-
-const int maxSeats = 8;
+float gravityFactor = 2.7f;
 
 bool allowBoarding = true;
+const int maxSeats = 8;
+
 
 struct Passenger {
     float offsetX, offsetY, offsetZ;
@@ -50,6 +50,8 @@ struct Passenger {
 };
 
 std::vector<Passenger> passengers;
+
+
 
 // ================= HELPERS =================
 void loadTrackVertices(const std::string& path) {
@@ -119,6 +121,17 @@ void generateKeyPoints() {
     std::cout << "Sorted " << sortedPoints.size() << " points for a continuous loop.\n";
 }
 
+bool allGone() {
+    bool gone = true;
+    for (Passenger& p : passengers) {
+        if (p.active) {
+            gone = false;
+            break;
+        }
+    }
+    return gone;
+}
+
 
 
 glm::vec3 carFront(0.0f, 0.0f, 1.0f);      
@@ -151,8 +164,8 @@ void startRide(GLFWwindow* window, int key, int scancode, int action, int mods) 
 
 void addPassanger(GLFWwindow* window, int key, int scancode, int action, int mods) {
 
-    if (action == GLFW_PRESS && carState != MOVING) {
-        if (key == GLFW_KEY_SPACE && allowBoarding) {
+    if (action == GLFW_PRESS && carState != MOVING && allowBoarding) {
+        if (key == GLFW_KEY_SPACE) {
 
             if (passengers.size() >= maxSeats) return; // limit
             int seatIndex = passengers.size();
@@ -183,18 +196,19 @@ void addPassanger(GLFWwindow* window, int key, int scancode, int action, int mod
 
 void removePassenger(GLFWwindow* window, int key, int scancode, int action, int mods) {
     
-    if (action == GLFW_PRESS && carState == STOPPED) {
+    if (action == GLFW_PRESS && carState == STOPPED && !allowBoarding) {
         if (key >= GLFW_KEY_1 && key <= GLFW_KEY_8) {
             int index = key - GLFW_KEY_1;
             if (index < passengers.size() && passengers[index].active) {
                 passengers[index].active = false;
-                passengers[index].beltOn = false;
+                //passengers[index].beltOn = false;
                 passengers[index].isSick = false;
             }
         }
     }
 
-    if (passengers.size() == 0) {
+    if (allGone()) {
+        passengers.clear();
         allowBoarding = true;
     }
 }
@@ -219,7 +233,7 @@ void sickPassenger(GLFWwindow* window, int key, int scancode, int action, int mo
 
 void putBeltOn(GLFWwindow* window, int key, int scancode, int action, int mods) {
 
-    if (action == GLFW_PRESS && carState == STOPPED) {
+    if (action == GLFW_PRESS && carState == STOPPED && allowBoarding) {
         if (key >= GLFW_KEY_1 && key <= GLFW_KEY_8) {
             int index = key - GLFW_KEY_1;
             if (index < passengers.size() && passengers[index].active) {
@@ -307,6 +321,7 @@ void allKeys(GLFWwindow* window, int key, int scancode, int action, int mods) {
     addPassanger(window, key, scancode, action, mods);
     sickPassenger(window, key, scancode, action, mods);
     putBeltOn(window, key, scancode, action, mods);
+    removePassenger(window, key, scancode, action, mods);
 }
 
 
