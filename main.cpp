@@ -59,6 +59,7 @@ std::vector<Passenger> passengers;
 int activeCameraPassenger = -1;
 
 
+
 // ================= HELPERS =================
 void loadTrackVertices(const std::string& path) {
     std::ifstream file(path);
@@ -76,6 +77,49 @@ void loadTrackVertices(const std::string& path) {
         }
     }
     file.close();
+}
+
+void setupGreenFilter(unsigned int& VAO, unsigned int& VBO)
+{
+    float vertices[] = {
+        -1.0f, -1.0f,   0.0f, 0.0f,
+         1.0f, -1.0f,   1.0f, 0.0f,
+         1.0f,  1.0f,   1.0f, 1.0f,
+        -1.0f, -1.0f,   0.0f, 0.0f,
+         1.0f,  1.0f,   1.0f, 1.0f,
+        -1.0f,  1.0f,   0.0f, 1.0f
+    };
+
+    glGenVertexArrays(1, &VAO);
+    glGenBuffers(1, &VBO);
+
+    glBindVertexArray(VAO);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+}
+
+unsigned int createGreenFilter()
+{
+    unsigned int greenTextureID;
+    glGenTextures(1, &greenTextureID);
+    glBindTexture(GL_TEXTURE_2D, greenTextureID);
+
+    unsigned char greenPixel[] = {50, 255, 0, 150 };  
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, greenPixel);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+    return greenTextureID;
 }
 
 void generateKeyPoints() {
@@ -400,15 +444,17 @@ int main() {
     unifiedShader.use();
     unifiedShader.setVec3("uTint", 1.0f, 1.0f, 1.0f);
 
+    Shader overlayShader("overlay.vert", "overlay.frag");
+ 
+    unsigned int greenOverlayVAO, greenOverlayVBO;
+    setupGreenFilter(greenOverlayVAO, greenOverlayVBO);
+    unsigned int greenTexture = createGreenFilter();
+
 
     unifiedShader.setVec3("uLightPos1", 50, 100, 75);
     unifiedShader.setVec3("uLightColor1", 2, 2, 2);
    unifiedShader.setVec3("uLightPos2", -50, 0, 0);
    unifiedShader.setVec3("uLightColor2", 0.5, 0.5, 0.5);
-    /* unifiedShader.setVec3("uLightPos3", 100, -20, -30);
-    unifiedShader.setVec3("uLightColor3", 2, 2, 2);
-    unifiedShader.setVec3("uLightPos4", 0, 0, 50);
-    unifiedShader.setVec3("uLightColor4", 2, 2, 2);*/
     unifiedShader.setVec3("uViewPos", 0, 0, 5);
 
     loadTrackVertices("res/tracks.obj");
@@ -603,10 +649,13 @@ int main() {
             glm::vec3 finalFront = glm::vec3(rotationMatrix * passengerRotation * glm::vec4(relativeFront, 0.0f));
 
             view = glm::lookAt(eyePos, eyePos + finalFront, up);
+
+    
         }
         else {
             
-            view = glm::lookAt(glm::vec3(-40.0f, 15.0f, -10.0f), glm::vec3(-50.0f, 0.0f, 10.0f), glm::vec3(0.0f, 1.0f, 0.0f));;
+            view = glm::lookAt(glm::vec3(-40.0f, 0.0f, -35.0f), glm::vec3(-20.0f, 10.0f, 15.0f), glm::vec3(0.0f, 1.0f, 0.0f));;
+            //view = glm::lookAt(glm::vec3(-40.0f, 0.0f, -10.0f), glm::vec3(-10.0f, 10.0f, 10.0f), glm::vec3(0.0f, 1.0f, 0.0f));;
             //view = glm::lookAt(glm::vec3(40.0f, 0.0f, -20.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));;
         }
 
@@ -614,6 +663,32 @@ int main() {
 
         unifiedShader.setVec3("uTint", 1.0f, 1.0f, 1.0f);
 
+        unifiedShader.use();
+        glm::mat4 currentView = view;
+
+        if (!passengers.empty() && passengers[0].active && passengers[0].isSick) {
+            glDisable(GL_DEPTH_TEST);
+
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+            overlayShader.use();
+
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, greenTexture);
+            overlayShader.setInt("overlayTexture", 0);
+
+            glBindVertexArray(greenOverlayVAO);
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+            glBindVertexArray(0);
+
+            glBindTexture(GL_TEXTURE_2D, 0);
+            glDisable(GL_BLEND);
+            glEnable(GL_DEPTH_TEST);
+
+            unifiedShader.use();
+            unifiedShader.setMat4("uV", currentView);
+        }
 
         glfwSwapBuffers(window);
         glfwPollEvents();
