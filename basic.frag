@@ -14,17 +14,6 @@ uniform vec3 uLightColor1;
 uniform vec3 uLightPos2;
 uniform vec3 uLightColor2;
 
-uniform vec3 uLightPos3;
-uniform vec3 uLightColor3;
-
-uniform vec3 uLightPos4;
-uniform vec3 uLightColor4;
-
-uniform vec3 uLightPos5;
-uniform vec3 uLightColor5;
-
-uniform vec3 uLightPos6;
-uniform vec3 uLightColor6;
 
 uniform vec3 uViewPos;
 uniform sampler2D uDiffMap1;
@@ -56,12 +45,8 @@ void main()
 
     vec3 light1 = calcLight(uLightPos1, uLightColor1, norm);
     vec3 light2 = calcLight(uLightPos2, uLightColor2, norm);
-    vec3 light3 = calcLight(uLightPos2, uLightColor2, norm);
-    vec3 light4 = calcLight(uLightPos2, uLightColor2, norm);
-    vec3 light5 = calcLight(uLightPos2, uLightColor2, norm);
-    vec3 light6 = calcLight(uLightPos2, uLightColor2, norm);
 
-    vec3 result = light1 + light2 + light3 + light4;
+    vec3 result = light1 + light2;
 
     vec4 texColor = texture(uDiffMap1, chUV);
     vec3 finalColor = texColor.rgb * result * uTint;

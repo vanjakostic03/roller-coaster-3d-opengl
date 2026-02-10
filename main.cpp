@@ -1,4 +1,4 @@
-﻿// Vanja Kostic SV/2022
+﻿// Vanja Kostic SV29/2022
 
 #define _CRT_SECURE_NO_WARNINGS
 
@@ -19,14 +19,16 @@
 #include "model.hpp"
 
 // ================= GLOBAL VARIABLES =================
-float carSpeed = 0.01f;
-std::vector<glm::vec3> rawVertices;
-std::vector<glm::vec3> keyPoints;
-std::vector<glm::vec3> sortedPoints; 
 
-glm::vec3 carPosition(1.0f);
-glm::vec3 seatsOffset(0.0f, 0.3f, 0.0f);
-int currentTargetIdx = 0;
+float carSpeed = 0.01f;
+std::vector<glm::vec3> rawVertices;     //vertexi iz obj fajla
+std::vector<glm::vec3> keyPoints;       //centroidi
+std::vector<glm::vec3> sortedPoints;    //po ovome se auto krece
+
+glm::vec3 carPosition(1.0f);                //trenutno pozicija
+glm::vec3 carFront(0.0f, 0.0f, 1.0f);       //pravac kretanja
+
+glm::vec3 seatsOffset(0.0f, 0.3f, 0.0f);    
 
 // kontrola kamere misem
 float yaw = -180.0f;	 
@@ -35,15 +37,20 @@ float lastX = 1280.0f / 2.0f;
 float lastY = 720.0f / 2.0f;
 bool firstMouse = true;
 
+
+//stanja auta
 enum CarState { MOVING, SLOWING_DOWN, RETURNING, STOPPED, WAITING };
 CarState carState = STOPPED;
 
+
+//promenljive za kretanje
 float t = 0.0f;        // parametar napredovanja 
 float waitTimer = 0.0f;
 float minSpeed = 0.05f;
 float maxSpeed = 0.50f;
 float gravityFactor = 9.7f;
 
+//flagovi 
 bool allowBoarding = true;
 const int maxSeats = 8;
 
@@ -53,14 +60,35 @@ struct Passenger {
     bool beltOn;
     bool isSick;
     bool active;            
+    int index; //for model
+};
+
+struct PassengerModelData {
+    float scale;
+    glm::vec3 positionOffset;
+};
+
+
+std::vector<PassengerModelData> modelData = {
+    {0.007f, glm::vec3(-0.5f, 1.5f, 0.33f)},   // mei
+    {0.17f,  glm::vec3(-0.9f, 1.8f, 0.33f)},   // old-lady
+    {0.2f, glm::vec3(-2.0f, 1.5f, 0.20f)},   // football-fan
+    {1.1f, glm::vec3(-1.0f, 1.8f, 0.20f)},  // person1
+    {1.2f, glm::vec3(-0.8f, 1.8f, 0.45f)},   // person2
+    {0.024f,  glm::vec3(-0.8f, 1.5f, 0.2f)},   // soldier
+    {1.0f, glm::vec3(-0.8f, 1.9f, 0.30f)},   // person3
+    {0.008f, glm::vec3(-0.8f, 1.5f, 0.45f)}    // doctor
 };
 
 std::vector<Passenger> passengers;
 int activeCameraPassenger = -1;
 
 
+std::vector<Model> passengerModels;
 
 // ================= HELPERS =================
+
+//cita iz obj fajla vertexe
 void loadTrackVertices(const std::string& path) {
     std::ifstream file(path);
     if (!file.is_open()) return;
@@ -122,6 +150,8 @@ unsigned int createGreenFilter()
     return greenTextureID;
 }
 
+
+//kreira centoride, pravi zatvrorenu putanju
 void generateKeyPoints() {
     keyPoints.clear();
     const int verticesPerPart = 382;
@@ -180,12 +210,6 @@ bool allGone() {
     return gone;
 }
 
-
-
-glm::vec3 carFront(0.0f, 0.0f, 1.0f);      
-glm::vec3 carFrontTarget(0.0f, 0.0f, 1.0f); 
-
-
 void startRide(GLFWwindow* window, int key, int scancode, int action, int mods) {
 
     bool allBelts = true;
@@ -202,11 +226,8 @@ void startRide(GLFWwindow* window, int key, int scancode, int action, int mods) 
             carState = MOVING;
             allowBoarding = false;
         }
-
-
     }
 }
-
 
 void addPassanger(GLFWwindow* window, int key, int scancode, int action, int mods) {
 
@@ -236,13 +257,13 @@ void addPassanger(GLFWwindow* window, int key, int scancode, int action, int mod
             p.beltOn = false;
             p.isSick = false;
             p.active = true;
+            p.index = seatIndex;
 
             passengers.push_back(p);
 
         }
     }
 }
-
 
 void removePassenger(GLFWwindow* window, int key, int scancode, int action, int mods) {
     
@@ -272,7 +293,6 @@ void makePassengerSick(int index) {
     }
 }
 
-
 void sickPassenger(GLFWwindow* window, int key, int scancode, int action, int mods) {
 
     if (action == GLFW_PRESS && carState == MOVING) {
@@ -295,7 +315,6 @@ void putBeltOn(GLFWwindow* window, int key, int scancode, int action, int mods) 
     }
 }
 
-
 void stopCar() {
     for (Passenger& p : passengers) {
         p.beltOn = false;
@@ -311,59 +330,6 @@ std::pair<glm::vec3, glm::vec3> getCarPosition(const std::vector<glm::vec3>& poi
     glm::vec3 pos = glm::mix(points[i0], points[i1], alpha);
     glm::vec3 forward = glm::normalize(points[i1] - points[i0]);
     return { pos, forward };
-}
-
-
-void updateCarPosition(float deltaTime) {
-    if (sortedPoints.empty()) return;
-
-    int n = sortedPoints.size();
-    float dtSlope = 0.001f;
-
-    // indeks trenutnog segmenta
-    int i0 = (int)(t * n);
-    int i1 = (i0 + 1) % n;
-
-    glm::vec3 p1 = sortedPoints[i0];
-    glm::vec3 p2 = sortedPoints[i1];
-
-    // nagib u Y osi
-    float dy = p2.y - p1.y;
-    float acc = -dy * gravityFactor;
-
-    switch (carState) {
-    case MOVING:
-        carSpeed += acc * deltaTime;
-        carSpeed = glm::clamp(carSpeed, minSpeed, maxSpeed);
-        t += carSpeed * deltaTime;
-        break;
-    case SLOWING_DOWN:
-        carSpeed -= 0.1f * deltaTime;
-        if (carSpeed <= 0.0f) { carSpeed = 0.0f; carState = WAITING; waitTimer = 0.0f; }
-        else t += carSpeed * deltaTime;
-        break;
-    case WAITING:
-        waitTimer += deltaTime;
-        if (waitTimer >= 10.0f) {
-            carSpeed = 0.1f;
-            carState = RETURNING;
-        }
-        break;
-    case RETURNING:
-        t -= carSpeed * deltaTime;
-        if (t <= 0.0f) { t = 0.0f; carState = STOPPED; carSpeed = 0.0f; stopCar(); }
-        break;
-    case STOPPED:
-        carSpeed = 0.0f;
-        break;
-    }
-
-    if (t >= 1.0f) t -= floor(t);
-    if (t < 0.0f) t += 1.0f;
-
-    auto pos = getCarPosition(sortedPoints, t);
-    carPosition = pos.first;
-    carFront = pos.second;  
 }
 
 void mouse_callback(GLFWwindow* window, double xposIn, double yposIn) {
@@ -392,14 +358,51 @@ void mouse_callback(GLFWwindow* window, double xposIn, double yposIn) {
     if (pitch < -89.0f) pitch = -89.0f;
 }   
 
+
+
+//testing
+bool depthTestEnabled = true;
+bool faceCullingEnabled = false;
+
+void toggleRenderSettings(GLFWwindow* window, int key, int scancode, int action, int mods) {
+    if (action == GLFW_PRESS) {
+        if (key == GLFW_KEY_D) {
+            depthTestEnabled = !depthTestEnabled;
+            if (depthTestEnabled) {
+                glEnable(GL_DEPTH_TEST);
+                std::cout << "Depth Test: ON\n";
+            }
+            else {
+                glDisable(GL_DEPTH_TEST);
+                std::cout << "Depth Test: OFF\n";
+            }
+        }
+
+        if (key == GLFW_KEY_F) {
+            faceCullingEnabled = !faceCullingEnabled;
+            if (faceCullingEnabled) {
+                glEnable(GL_CULL_FACE);
+                glCullFace(GL_BACK);
+                std::cout << "Face Culling: ON\n";
+            }
+            else {
+                glDisable(GL_CULL_FACE);
+                std::cout << "Face Culling: OFF\n";
+            }
+        }
+    }
+}
+
+
+//all callbacks
 void allKeys(GLFWwindow* window, int key, int scancode, int action, int mods) {
     startRide(window, key, scancode, action, mods);
     addPassanger(window, key, scancode, action, mods);
     sickPassenger(window, key, scancode, action, mods);
     putBeltOn(window, key, scancode, action, mods);
     removePassenger(window, key, scancode, action, mods);
+    toggleRenderSettings(window, key, scancode, action, mods);  
 }
-
 
 // ================= MAIN =================
 int main() {
@@ -432,12 +435,20 @@ int main() {
     glfwSetCursorPosCallback(window, mouse_callback);
 
 
-    Model lija("res/low-poly-fox.obj");
     Model tracks("res/tracks.obj");
-    Model car("res/car.obj");
+    Model car("res/car1.obj");
     Model seats("res/seats.obj");
-    Model passengerModel("res/human.obj");
     Model beltModel("res/belt.obj");
+
+
+    passengerModels.push_back(Model("res/mei/mei.obj"));
+    passengerModels.push_back(Model("res/old-lady/old-lady.obj"));
+    passengerModels.push_back(Model("res/football-fan/football-fan.obj"));
+    passengerModels.push_back(Model("res/person1/person1.obj"));
+    passengerModels.push_back(Model("res/person2/person2.obj"));
+    passengerModels.push_back(Model("res/soldier/soldier.obj"));
+    passengerModels.push_back(Model("res/person3/person3.obj"));
+    passengerModels.push_back(Model("res/doctor/doctor.obj"));
 
     Shader unifiedShader("basic.vert", "basic.frag");
 
@@ -453,8 +464,8 @@ int main() {
 
     unifiedShader.setVec3("uLightPos1", 50, 100, 75);
     unifiedShader.setVec3("uLightColor1", 2, 2, 2);
-   unifiedShader.setVec3("uLightPos2", -50, 0, 0);
-   unifiedShader.setVec3("uLightColor2", 0.5, 0.5, 0.5);
+    unifiedShader.setVec3("uLightPos2", -50, 0, 0);
+    unifiedShader.setVec3("uLightColor2", 0.5, 0.5, 0.5);
     unifiedShader.setVec3("uViewPos", 0, 0, 5);
 
     loadTrackVertices("res/tracks.obj");
@@ -536,12 +547,11 @@ int main() {
  
 
         unifiedShader.setMat4("uP", projection);
-
-
         unifiedShader.setMat4("uM", glm::mat4(1.0f));
         tracks.Draw(unifiedShader);
 
         glm::mat4 modelCar = glm::mat4(1.0f);
+        //modelCar = glm::translate(modelCar, carPosition );
         modelCar = glm::translate(modelCar, carPosition + glm::vec3(0.2f, 1.5f, 0.65f));
 
         glm::vec3 worldUp = glm::vec3(0.0f, 1.0f, 0.0f);
@@ -578,16 +588,19 @@ int main() {
             else
                 unifiedShader.setVec3("uTint", 1.0f, 1.0f, 1.0f);
 
+            PassengerModelData& data = modelData[p.index];
+
             glm::mat4 modelPassenger = glm::mat4(1.0f);
             modelPassenger = glm::translate(modelPassenger, carPosition);
-            modelPassenger = modelPassenger * rotationMatrix; 
-            modelPassenger = modelPassenger * passengerRotation; 
-            modelPassenger = glm::translate(modelPassenger, glm::vec3(p.offsetX-0.2f, p.offsetY + 1.5f, p.offsetZ+0.53f));
-            modelPassenger = glm::scale(modelPassenger, glm::vec3(1.0f));
-
-
+            modelPassenger = modelPassenger * rotationMatrix;
+            modelPassenger = modelPassenger * passengerRotation;
+            
+            modelPassenger = glm::translate(modelPassenger, glm::vec3(p.offsetX, p.offsetY, p.offsetZ));
+            modelPassenger = modelPassenger * rotationMatrix;
+            modelPassenger = glm::translate(modelPassenger, data.positionOffset);
+            modelPassenger = glm::scale(modelPassenger, glm::vec3(data.scale));
             unifiedShader.setMat4("uM", modelPassenger);
-            passengerModel.Draw(unifiedShader);
+            passengerModels[p.index].Draw(unifiedShader);
 
             if (p.beltOn) {
                 glm::mat4 modelBelt = glm::mat4(1.0f);
@@ -604,32 +617,7 @@ int main() {
             }
         }
 
-        //if (activeCameraPassenger == 0 && !passengers.empty() && passengers[0].active) {
-        //    // 1. Izračunaj poziciju glave prvog putnika
-        //    glm::mat4 headPosMatrix = glm::mat4(1.0f);
-        //    headPosMatrix = glm::translate(headPosMatrix, carPosition);
-        //    headPosMatrix = headPosMatrix * rotationMatrix;
-        //    headPosMatrix = headPosMatrix * passengerRotation;
-
-        //    glm::vec3 p0Offset = glm::vec3(passengers[0].offsetX - 1.5f, passengers[0].offsetY + 0.8f, passengers[0].offsetZ);
-        //    headPosMatrix = glm::translate(headPosMatrix, p0Offset + cameraHeightOffset);
-        //    glm::vec3 eyePos = glm::vec3(headPosMatrix[3]);
-
-        //    float lookAheadT = t + 0.02f; // Gledaj 2% staze unapred
-        //    if (lookAheadT > 1.0f) lookAheadT -= 1.0f;
-
-        //    auto futurePos = getCarPosition(sortedPoints, lookAheadT);
-        //    glm::vec3 lookAtTarget = futurePos.first + glm::vec3(0.0f, 1.5f, 0.0f); // Gledaj u visini očiju
-
-        //    view = glm::lookAt(eyePos, lookAtTarget, up);
-        //    //glm::vec3 p0Offset = glm::vec3(passengers[0].offsetX - 1.5f, passengers[0].offsetY + 0.8f, passengers[0].offsetZ);
-        //    //headPosMatrix = glm::translate(headPosMatrix, p0Offset + cameraHeightOffset);
-
-        //    //glm::vec3 eyePos = glm::vec3(headPosMatrix[3]);
-        //    //glm::vec3 lookAtTarget = eyePos + carFront; // Gleda pravo napred
-
-        //    //view = glm::lookAt(eyePos, lookAtTarget, up);
-        //}
+      
         if (activeCameraPassenger == 0 && !passengers.empty()) {
             glm::mat4 headPosMatrix = glm::mat4(1.0f);
             headPosMatrix = glm::translate(headPosMatrix, carPosition);
@@ -649,11 +637,8 @@ int main() {
             glm::vec3 finalFront = glm::vec3(rotationMatrix * passengerRotation * glm::vec4(relativeFront, 0.0f));
 
             view = glm::lookAt(eyePos, eyePos + finalFront, up);
-
-    
         }
         else {
-            
             view = glm::lookAt(glm::vec3(-40.0f, 0.0f, -35.0f), glm::vec3(-20.0f, 10.0f, 15.0f), glm::vec3(0.0f, 1.0f, 0.0f));;
             //view = glm::lookAt(glm::vec3(-40.0f, 0.0f, -10.0f), glm::vec3(-10.0f, 10.0f, 10.0f), glm::vec3(0.0f, 1.0f, 0.0f));;
             //view = glm::lookAt(glm::vec3(40.0f, 0.0f, -20.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));;
@@ -695,6 +680,7 @@ int main() {
 
         while (glfwGetTime() - currentTime < 1 / 75.0) {}
     }
+    
     glfwTerminate();
     return 0;
 }

@@ -1,0 +1,11 @@
+#
+#
+#
+
+newmtl Mash_mei_material
+illum 1                    # Illumination model 1 (bez specular highlight-a)
+Ka 0.2 0.2 0.2
+Kd 0.03 0.03 0.03
+Ks 0.0 0.0 0.0             # Specular = 0
+Ns 10.0                     # Shininess = 0
+map_Kd tex/rp_mei_posed_001_dif_2k.jpg
